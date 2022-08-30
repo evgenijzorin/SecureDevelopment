@@ -1,0 +1,113 @@
+﻿MS SQL Server
+~~~~~~~~~~~~~
+
+1. https://www.microsoft.com/ru-ru/sql-server/sql-server-downloads
+
+2. SQL Server Management Studio (SSMS)
+   https://docs.microsoft.com/ru-ru/sql/ssms/download-sql-server-management-studio-ssms?view=sql-server-ver15
+
+   2.1. Создать базу данных в SQL menagement studio
+   2.2. Создать пользователя для базы данных. Вкладка безопасность -> login. Назначить ему базу данных (User Mapping)
+        Назначить права db.owner
+   2.3  Выставить для субд серверную аутентификацию. (вкладка безопасность) Настроить вход служебного пользователя.
+
+ASP.Net Core EF
+~~~~~~~~~~~~~~~
+0. Создать проект .Data в котором будет содержаться модель для базы данных. Установить зависимость на проект .Data из основного проекта.
+
+
+1. Установить пакет в главном проекте
+     Microsoft.EntityFrameworkCore.Design
+
+
+2. Установить пакет в .Data проекте
+     Microsoft.EntityFrameworkCore
+     Microsoft.EntityFrameworkCore.Proxies
+     Microsoft.EntityFrameworkCore.SqlServer
+     Microsoft.EntityFrameworkCore.Tools
+
+3. Создать новый DbContext class (В Data проекте). Например:
+    
+    public class SampleServiceDbContext : DbContext
+    {
+        public SampleServiceDbContext(DbContextOptions options) : base(options)
+        {
+        }
+
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+        {
+            base.OnConfiguring(optionsBuilder);
+            optionsBuilder.UseSqlServer();
+            optionsBuilder.UseLazyLoadingProxies();
+        }
+    }
+
+4. Добавить новые "entity classes"
+   Эти классы представляют собой модели таблиц базы данных.
+   4.1 Установить связи с контекстом базы данных DbContext. То есть создать специальные поля "public virtual DbSet<объект entity(строка таблицы)>"
+       со свойствами get set.
+
+5. Создать миграцию 
+   5.1 В файле appaettings.json создать строку соединение с базой данных "ConnectionString". Она должна содержать координаты базы данных, каталог, 
+       служебного пользователя, пароль, и специальные свойства.
+   Пример:
+        "Settings": {
+            "DatabaseOptions": {
+            "ConnectionString": "data source=DESKTOP-E4UTNHO\\SQLEXPRESS;initial catalog=CardStorageService;User Id=CardStorageServiceUser;Password=12345;MultipleActiveResultSets=True;App=EntityFramework"
+            }
+        }
+    5.2 добавление контекста базы данных в ConfigureServices        
+            Пример: 
+            // добавление контекста базы данных, и его настройка по средством ConectionString
+            services.AddDbContext<CardStorageServiceDbContext>(options =>
+            {
+                options.UseSqlServer(Configuration["Settings:DatabaseOptions:ConnectionString"]);
+            });
+        при этом Configuration == builder.Configuration (в .net5)
+    5.3 Пересобрать приложение и назначить основной проект в качестве запускаемого
+
+    5.4 Вызываем консоль диспечера пакетов и осуществляем миграцию базы данных. При этом, в консоли диспечера пакетов переключить
+        проект по умолчанию на .Data. Это не запускаемый проект, а проект с которым работает консоль (!) 
+        Add-Migration InitialCreate
+        Remove-Migration - для отката миграции
+
+6. Для обновления БД (после добавления новой миграции) мы можем воспользоваться командой   
+    Update-Database
+7. Добавляем контроллеры. В данном примере API Empty
+8. Добавляем сервисы. Добавляем репозитории для сущьностей (как в модели базы данных) с CRUID операциями.
+9. В рамках DI добавляем зависимости для сервисов. Время жизни выбираем scoped. (в методе configureServices)
+    Пример:
+    services.AddScoped<IClientRepositoryService, ClientRepository>();
+10. Внедряем ссылку на контекст базы данных в репозитории, создавая соответствующие поле. Затем инициализируем её в конструкторе класса
+    private readonly CardStorageServiceDbContext _dbContext; // Ссылка на контекст
+11. Так же создаем логгер, для ведения журнала, и инициализируем её в конструкторе класса
+    private readonly ILogger<CardRepository> _logger; // Ведение журнала
+    Для логирования устанавливаем NLog.Web.AspNetCore
+12. Законфигурировать взаимодействие с логгером в ConfigureService                
+            services.AddHttpLogging(logging =>
+            {
+                logging.LoggingFields = HttpLoggingFields.All | HttpLoggingFields.RequestQuery;
+                logging.RequestBodyLogLimit = 4096;
+                logging.ResponseBodyLogLimit = 4096;
+                logging.RequestHeaders.Add("Authorization");
+                logging.RequestHeaders.Add("X-Real-IP");
+                logging.RequestHeaders.Add("X-Forwarded-For");
+            });
+13. Создать текстовый конфигурационный файл nlog.config. В этом файле прописаны правила (тег <rules>) логирования. Он обеспечивает сохранение записей журнала в 
+    разных файлах <targets> для каждого объекта логирования. В данном случае есть 3 файла: serviceAllFile, httpAllFile, serviceAllConsole.
+
+    В файле appsettings.json прописываем папку для хранения журналов
+    "Logger": {
+      "Path": "C:/Logs/CardStorageService"
+    }
+    В свою очередь nlog.config содержит запись которая определяет из файла appsettings.json, в переменной logDirectory,
+    путь сохранения файлов.    
+            <variable name="logDirectory" value="${configsetting:item=Settings.Logger.Path}/" />
+    Затем эта переменная используется для сохранения файла логирования при изменении
+    		<target xsi:type="File" name="httpAllFile"
+			fileName="${logDirectory}${date:format=yyyyMMdd}.${serviceName}.Requests.log"
+			layout="${longdate}|${event-properties:item=EventId_Id:whenEmpty=0}|${uppercase:${level}}|${logger}|${message} ${exception:format=tostring}" />
+
+    
+    
+
