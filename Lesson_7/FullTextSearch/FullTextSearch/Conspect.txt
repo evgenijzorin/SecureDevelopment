@@ -1,0 +1,161 @@
+﻿~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Полнотекстовый поиск.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~	
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~ Пример 1. ~~~~~~~~~~~~~~~~~~~~~~~~~~ 
+	Полнотекстовый поиск (англ. Full text searching, фр. Recherche en texte integral) — автоматизированный поиск документов, при котором поиск ведётся не по именам документов,
+а по их содержимому, всему или существенной части.
+
+1. В текстовом файле data.txt содержится большое колличество текста на 62 мБ. Просмотреть текст возможно с помощью TotalCommander средством просмотра
+	текста (блокнот зависнет). В тексте номер статьи отделяется от тела знаком табуляции. Задача состоит в том чтобы нати определенный текст в этом файле.
+
+2. Делаем интеграцию базы данных. Создаем папку Entity. Создаем класс модели базы данных Document.cs. Создаем новую базу данных DocumentsDatabese, содздаем
+	для нее пользователя с правамми владельца DocumentsDatabeseUser. 
+	
+4. Добавляем необходимые сборки для работы с базой данных entity framework.
+		Microsoft.EntityFrameworkCore
+		Microsoft.EntityFrameworkCore.Proxies
+		Microsoft.EntityFrameworkCore.SqlServer
+		Microsoft.EntityFrameworkCore.Tools
+		Microsoft.EntityFrameworkCore.Design
+	Пакеты добавляем в файле настроек .csproj. Затем их можно увидеть во вкладке Установленно диспечера пакетов nuget:			
+		<ItemGroup>
+			<PackageReference Include="BenchmarkDotNet" Version="0.13.2" />
+			<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="6.0.8">
+				<PrivateAssets>all</PrivateAssets>
+				<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+			</PackageReference>
+			<PackageReference Include="Microsoft.EntityFrameworkCore" Version="6.0.8" />
+			<PackageReference Include="Microsoft.EntityFrameworkCore.Proxies" Version="6.0.8" />
+			<PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="6.0.8" />
+			<PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="6.0.8">
+				<PrivateAssets>all</PrivateAssets>
+				<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+			</PackageReference>
+			<PackageReference Include="Swashbuckle.AspNetCore" Version="5.6.3" />
+		</ItemGroup>
+
+5. Созаем контекст базы данных DocumentDbContext : Context.
+    internal class DocumentDbContext : DbContext
+    {
+        public virtual DbSet<Document> Documents { get; set; }
+        public DocumentDbContext(DbContextOptions option) : base(option) { }
+    }
+
+6. В рамках точки входа нашего приложения создаем в методе Main хост:
+            var host = Host.CreateDefaultBuilder(args)
+                .ConfigureServices(services =>
+                {
+                    #region Configure EF DbContext Service 
+                    services.AddDbContext<DocumentDbContext>(option =>
+                    {
+                        option.UseSqlServer(@"data source = DESKTOP-E4UTNHO\SQLEXPRESS; initial catalog = DocumentsDatabase; User Id = DocumentsDatabaseUser; Password = 12345; MultipleActiveResultSets = True; App = EntityFramework");
+                        // data source - имя компьютера
+                        // initial catalog - имя базы данных
+                        // User Id  - служебный пользователь базы данных
+                        // MultipleActiveResultSets - несколько активных результирующих набора. Если указано значение true, приложение может поддерживать несколько
+                        // активных наборов результатов (режим MARS). 
+                    });
+                    #endregion
+
+                })
+            .Build(); 
+
+7. Добавляем миграцию: Консоль диспечера пакетов -> Add-Migration
+													update-database
+
+8. Создаем сервис репозитория 
+    public class DocumentRepository : IDocumentRepository
+    {
+        #region Services
+        private readonly DocumentDbContext _dbContext;
+        #endregion
+
+        #region Constructors
+        public DocumentRepository(DocumentDbContext documentDbContext)
+        {
+            _dbContext = documentDbContext;
+        }
+        #endregion
+    }
+
+9. Подключаем сервис в настройках хоста (DI)
+    services.AddTransient<IDocumentRepository, DocumentRepository>();
+
+10. В репозиторий добавляем учебный пример метода LoadDocumtns()  для получения статьи из документа по табуляции и номеру.
+    Затем в методе Main запрашиваем хостинг на выполнение метода:               
+            host.Services
+                .GetRequiredService<IDocumentRepository>() // Обратиться к сервису               
+                .LoadDocuments();// Вызвать метод сервиса.
+
+11. Непосредственно в SOL Manager мы можем создать запрос (контекстное меню на БД -> new query, и ввести следующие команды:
+    select count(*) from Documets; - определить количество записей в БД
+    set statistics time on;  - отобразить время начала выполнения запроса
+    select count(*) from Documets where Content like'%Monday%'; - определить колличество записей 'Monday'
+    set statistics time off; - отобразить время конца выполнения запроса
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~ Пример 2. ~~~~~~~~~~~~~~~~~~~~~~~~~~ 
+1. В приложении может быть несколько методов Main() - точек входа. Но запускаемым должен быть выбран только один. В данном примере создается новый класс Sample02 
+    со своим методом Main(). Чтобы назначить текущую точку входа, необходимо в свойствах проекта указать поле "Автоматически запускаемый объект"
+    Так же в методе Main создаем хост.
+
+2. Создаем класс DocumentExtractor. Этот класс содержит основной метод  DocumentsSet() - который возвращает массив строк - отдельные статьи без номера.
+    В теле Main() получаем набор статей:    
+            var documentsSet = DocumentExtractor.DocumentsSet()
+                .Take(10000) // Колличество забора данных
+                .ToArray();
+3. Создаем класс SimpleSearcher который содержит метод Search который ищет определенное слово в наборе статей и выводит 
+    его на консоль.
+    В теле Main():
+        new SimpleSearcher().Search("Monday", documentsSet);
+    3.1 Создаем класс SimpleSearcherV2, который содержит метод SearchV1 который выводит найденую статью на консоль, ограничевая её 150 символами.
+
+4. Оба алгоритма имеют существенные недостатки: 
+    1. текст ищется 2 раза: 1-й для того чтобы определить есть ли совпадение, 2-й для того, чтобы определить саму найденную статью.
+    2. Поиск ищет 1-е совпадение и не учитывает, что совпадений может быть несколько.
+
+5. Для решения вышеуказанных проблемм реализуется метод SearchV2 в котором поиск выполняется так же с помощью метода IndexOf(word, pos) который возвращает индекс элемента, если найдет
+    или -1 если не найдет, затем номер позиции (pos) элемента инкрементируется и поиск повторяется уже с заданной позиции. Теперь эти 2 проблеммы решены.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~ Тестирование алгоритмов с помощью bechmark ~~~~~~~~~~~~~~~~~~~~~~~~~~ 
+0. Примечание: 0.1. В технологии Benchmark весь синтаксис описываемый в конструкторе класса не учитывается для определения времени выполнения.
+               0.2. Тест Benchmarck не выполняется в режиме Debug. Но можно его выполнять добавив инструкцию далее в пункте 3.                            
+
+1. Для тестирования создаем метод SearchV3, который вместо того, чтобы выводить информацию в консоль, возвращает коллекцию с найденными строками
+
+2. Для того чтобы определить время выполнения метода необходимо добавить перед ним атрибут [Benchmark]
+    атрибут [MemoryDiagnoser] - добавить к классу, для диагностики затрат памяти.
+    атрибут [WarmupCount(1)] - прогрев - действия выполняемые при первом запуске, и не выполняемые при повторном.
+    атрибут [IterationCount(5)] - колличество повторений теста.
+
+3. Инструкция запуска Benchmark в режиме debug с умеренной потерей в точности.
+            BenchmarkSwitcher.FromAssembly(typeof(Sample02).Assembly)
+                .Run(args, new BenchmarkDotNet.Configs.DebugInProcessConfig());
+4. Определить класс участвующий в расчете производительности
+            BenchmarkRunner.Run<SearchBenchmarkV1>();
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~ Внедрение словаря документа. (Индексирование) ~~~~~~~~~~~~~~~~~~~~~~~~~~ 
+    Добавляем специальную таблицу оптимизирующую поиск.
+1. Создаем класс сущьности Word, который будет представлять собой слово встречающееся в тексте. И представляет соотв. таблицу.
+2. Создаем класс сущьности WordDocument, который представляет собой словарь ссылок на слова, с сылкой на номер статьи. И представляет соотв. таблицу.
+3. Добавляем в контекст базы данных новые таблицы, делаем миграцию и обновляем DB
+4. Создаем точку входа Sample03
+5. Создаем класс Lexer, который создает набор всех слов из определенной статьи переделав их в нижний регистр.
+6. Создаем класс FullTextIndexV1 который индексирует каждое слово в каждой статье опрдееленнм индексо. Теперь есть две таблицы:
+    1. Таблица всех слов присутствующих в статьях (Words), с уникальными идентификаторами.
+    2. Таблица индексов слов в статьях (WordDocuments), в которой указано каждое слово по порядковому номеру, индексу в таблице (Words),
+7. Создаем класс FullTextIndexV3 где реализованна та же функциональность только без сохранения в базе данных.
+8. Для определения статистики нахождения тех или иных слов: контекстн.м. на базе данных -> создать запрос 
+    использовать синтаксис в командной строке базы данных:
+    --Статистика по словам в документах:
+    select count(WordId) Count, wd.WordId, w.Text from WordDocuments wd
+    left join Words w on w.id = wd.WordId
+    group by [WordId], [Text]
+    order by count(WordId) desc
+
+
+
+
+
+
+    
